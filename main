@@ -1,0 +1,185 @@
+import pygame
+import random
+import os
+import sys
+
+# Initialize the game
+pygame.init()
+
+# Function to get the correct resource path
+def resource_path(relative_path):
+    """ Get the absolute path to the resource, works for dev and for PyInstaller """
+    try:
+        # PyInstaller creates a temporary folder and stores path in _MEIPASS
+        base_path = sys._MEIPASS
+    except Exception:
+        base_path = os.path.abspath(".")
+
+    return os.path.join(base_path, relative_path)
+
+# Screen dimensions
+SCREEN_WIDTH = 400
+SCREEN_HEIGHT = 600
+screen = pygame.display.set_mode((SCREEN_WIDTH, SCREEN_HEIGHT))
+pygame.display.set_caption("Flappy Bird")
+
+# Load Images
+bird_image = pygame.image.load(resource_path('bird.png')).convert_alpha()  # Bird image
+pipe_image = pygame.image.load(resource_path('pipe.png')).convert_alpha()  # Pipe image
+background_image = pygame.image.load(resource_path('background.png')).convert()  # Background image
+base_image = pygame.image.load(resource_path('base.png')).convert_alpha()  # Base image
+button_image = pygame.image.load(resource_path('button.png')).convert_alpha()  # Start button image
+
+# Resize Images
+bird_image = pygame.transform.scale(bird_image, (40, 30))  # Resize the bird image
+pipe_image = pygame.transform.scale(pipe_image, (70, 400))  # Resize the pipe image
+base_image = pygame.transform.scale(base_image, (SCREEN_WIDTH, 50))  # Resize the base image
+button_image = pygame.transform.scale(button_image, (300, 100))  # Resize the button image
+
+# Load Sound Effects
+jump_sound = pygame.mixer.Sound(resource_path('jump.mp3'))  # Sound for jumping
+score_sound = pygame.mixer.Sound(resource_path('score.mp3'))  # Sound for scoring
+game_over_sound = pygame.mixer.Sound(resource_path('game_over.mp3'))  # Sound for game over
+
+# Colors
+WHITE = (255, 255, 255)
+BLACK = (0, 0, 0)
+
+# Game Variables
+gravity = 0.5
+bird_movement = 0
+pipe_speed = 5
+pipe_gap = 200  # This controls the gap size between pipes
+floor_y = SCREEN_HEIGHT - 50  # Adjusted for bird collision at the bottom
+game_active = False  # Start with the game inactive
+score = 0
+
+# Bird
+bird_rect = bird_image.get_rect(center=(100, SCREEN_HEIGHT // 2))
+
+# Pipe List
+pipe_list = []
+
+# Fonts
+font = pygame.font.Font(None, 40)
+
+# Timer for spawning pipes
+SPAWNPIPE = pygame.USEREVENT
+pygame.time.set_timer(SPAWNPIPE, 1200)
+
+# Function to create new pipes
+def create_pipe():
+    gap_height = random.randint(150, 300)  # Adjusted height for the gap (reduced the maximum height)
+    pipe_top = pipe_image.get_rect(midbottom=(SCREEN_WIDTH, gap_height - pipe_gap // 2))
+    pipe_bottom = pipe_image.get_rect(midtop=(SCREEN_WIDTH, gap_height + pipe_gap // 2))
+    return pipe_top, pipe_bottom
+
+# Function to move pipes
+def move_pipes(pipes):
+    for pipe in pipes:
+        pipe.centerx -= pipe_speed
+    return [pipe for pipe in pipes if pipe.right > 0]
+
+# Function to draw pipes
+def draw_pipes(pipes):
+    for pipe in pipes:
+        if pipe.bottom >= SCREEN_HEIGHT:  # Bottom pipe
+            screen.blit(pipe_image, pipe)
+        else:  # Top pipe
+            flipped_pipe = pygame.transform.flip(pipe_image, False, True)  # Flip the pipe
+            screen.blit(flipped_pipe, pipe)
+
+# Function to check collisions
+def check_collision(pipes):
+    global game_active
+    for pipe in pipes:
+        if bird_rect.colliderect(pipe):
+            game_active = False
+            game_over_sound.play()  # Play game over sound
+    # Check upper collision
+    if bird_rect.top <= 0:  # Check if the bird has collided with the top of the screen
+        game_active = False
+        game_over_sound.play()  # Play game over sound
+    if bird_rect.bottom >= floor_y:  # Check if the bird has collided with the bottom of the screen
+        game_active = False
+        game_over_sound.play()  # Play game over sound
+
+# Function to display score
+def display_score(score):
+    score_surface = font.render(f"Score: {int(score)}", True, BLACK)
+    screen.blit(score_surface, (10, 10))
+
+# Function to display the image button
+def display_button_image():
+    button_rect = button_image.get_rect(center=(SCREEN_WIDTH // 2, SCREEN_HEIGHT // 2))  # Center the button
+    screen.blit(button_image, button_rect)  # Draw the button image
+    return button_rect  # Return the button rect for click detection
+
+# Main Game Loop
+clock = pygame.time.Clock()
+running = True
+
+while running:
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
+
+        # Handle button clicks
+        if event.type == pygame.MOUSEBUTTONDOWN:
+            mouse_pos = pygame.mouse.get_pos()  # Get mouse position
+
+            # Start Game on button click
+            if not game_active and display_button_image().collidepoint(mouse_pos):
+                game_active = True  # Start the game
+                bird_rect.center = (100, SCREEN_HEIGHT // 2)  # Reset bird position
+                bird_movement = 0  # Reset bird movement
+                score = 0  # Reset score
+                pipe_list.clear()  # Clear any existing pipes
+
+        # Handle bird jump if the game is active
+        if game_active:
+            if event.type == pygame.MOUSEBUTTONDOWN or (event.type == pygame.KEYDOWN and event.key == pygame.K_SPACE):
+                bird_movement = 0  # Reset movement to create a jump effect
+                bird_movement -= 12  # Jump height
+                jump_sound.play()  # Play jump sound
+
+        if event.type == SPAWNPIPE and game_active:
+            pipe_list.extend(create_pipe())
+
+    # Draw Background
+    screen.blit(background_image, (0, 0))  # Draw the background image
+
+    if game_active:
+        # Bird Movement
+        bird_movement += gravity
+        bird_rect.centery += bird_movement
+        screen.blit(bird_image, bird_rect)
+
+        # Pipes
+        pipe_list = move_pipes(pipe_list)
+        draw_pipes(pipe_list)
+
+        # Collision Check
+        check_collision(pipe_list)
+
+        # Increment score based on pipe pass
+        for pipe in pipe_list:
+            if pipe.centerx == bird_rect.centerx:
+                score += 0.5
+                score_sound.play()  # Play score sound
+
+        # Display Score
+        display_score(score)
+
+    else:
+        # Display image button if game is inactive
+        display_button_image()
+
+    # Draw the base image
+    screen.blit(base_image, (0, SCREEN_HEIGHT - base_image.get_height()))
+
+    # Update the screen
+    pygame.display.update()
+    clock.tick(60)
+
+pygame.quit()
